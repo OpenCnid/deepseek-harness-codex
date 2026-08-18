@@ -15,6 +15,7 @@ It is not affiliated with, endorsed by, or supported by OpenAI or DeepSeek.
 - Device/browser OAuth login and explicit re-login state.
 - One opaque, versioned OAuth session credential; no token values in settings/UI responses.
 - Safe access-token refresh with cross-process contention control.
+- Exclusive `openai-codex` route ownership with an explicit, value-free migration from conflicting generic profiles.
 - Codex Responses text streaming, tool calls, cancellation, and model metadata mapped to the DeepSeek Harness LLM seam.
 
 ## Development

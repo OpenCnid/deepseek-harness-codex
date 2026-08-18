@@ -35,6 +35,24 @@ The plugin must use only published DeepSeek Harness contracts:
 
 No upstream `src/*` internal import is permitted. No duplicate adapter route is permitted.
 
+## Provider-route ownership and migration
+
+`openai-codex` is exclusively owned by this plugin. A deployment must not configure
+`llm-pi-ai.providers.openai-codex` while this plugin is enabled: DeepSeek Harness
+atomically rejects duplicate adapter registration, leaving whichever adapter mounted
+first as the active route.
+
+Before enabling this plugin, the installer/configuration surface must remove the
+`openai-codex` profile from the `llm-pi-ai` section and preserve it only as a
+user-visible migration record; it must never copy a credential value into this
+plugin or silently repurpose another provider route. The plugin's eventual mount
+preflight must fail loudly and value-free when that route is already registered. It
+must not unregister another adapter or mutate the user's `llm-pi-ai` settings.
+
+A failed preflight leaves the existing adapter and all credential references intact.
+Uninstalling this plugin likewise does not recreate a generic profile or write any
+credential; reconfiguration is an explicit operator choice.
+
 ## OAuth authorization boundary
 
 Hermes is evidence of desired behavior, **not** authority to reuse its OAuth application identity, device-flow parameters, first-party client headers, account-header conventions, or backend URL selection.

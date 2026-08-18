@@ -1,0 +1,5 @@
+# Notices
+
+The initial project scaffold contains no copied third-party source code.
+
+The implementation will retain any required notices for material ported from or derived from third-party projects. DeepSeek Harness and Hermes Agent source revisions used for behavior analysis will be recorded in the project’s port-contract documentation.

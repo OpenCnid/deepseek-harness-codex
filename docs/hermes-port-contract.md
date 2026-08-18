@@ -1,6 +1,6 @@
 # Hermes Codex behavior port contract
 
-**Status:** source-grounded implementation contract — not authorization to use an OAuth client, endpoint, or first-party client identity.
+**Status:** source-grounded local-broker contract — it does not authorize the DSH package to reuse an OAuth client, endpoint, or first-party client identity.
 
 ## Purpose
 
@@ -9,10 +9,10 @@ This document defines the behavior that `@opencnid/dsh-llm-openai-codex` must pr
 | Surface | Contract |
 |---|---|
 | Provider route | `openai-codex` |
-| Credential reference | `OPENAI_CODEX_OAUTH` |
-| Persistence unit | One opaque, versioned OAuth-session value |
-| Host adapter | DeepSeek Harness `LlmAdapter` |
-| Scope | Interactive Codex via an OpenAI-permitted OAuth flow; not API-key OpenAI support |
+| Credential reference | No DSH OAuth credential in the default broker path |
+| Persistence unit | Hermes-owned OAuth session; DSH persists no broker credential |
+| Host adapter | DeepSeek Harness `LlmAdapter` via the local Hermes proxy |
+| Scope | Interactive Codex through the user-authenticated Hermes broker; not API-key OpenAI support |
 
 ## Provenance and license boundary
 
@@ -29,9 +29,9 @@ The plugin must use only published DeepSeek Harness contracts:
 
 - It is mounted as a Cordis plugin and registers the unique provider route `openai-codex` through `ctx.llm.registerAdapter()`.
 - It subclasses `LlmAdapter` and implements `stream(options)`, honoring `options.signal` and emitting only Harness `StreamChunk` events.
-- It resolves and writes the single credential reference through `ctx.credentials`; configuration and status surfaces use `describe()` and never receive the secret value.
-- Every provider HTTP request includes `attributionHeaders()`.
-- The eventual refresh transaction uses a cross-process lock around the entire resolve → evaluate → refresh → replace sequence. DeepSeek Harness publishes `withFileLock()` for this shape.
+- The default runtime sends Responses requests to Hermes’s loopback Codex proxy at `http://127.0.0.1:8645/v1/responses`. It uses only a fixed non-secret local marker; it does not resolve, read, write, log, or return a DSH OAuth credential.
+- Hermes’s proxy resolves and refreshes its own managed OAuth session inside the Hermes process, replaces the inbound marker, and forwards only `POST /v1/responses` upstream. DSH never receives a Hermes access token, refresh token, auth-store value, device code, OAuth client material, or raw broker authentication error.
+- Every forwarded Responses request includes `attributionHeaders()`.
 
 No upstream `src/*` internal import is permitted. No duplicate adapter route is permitted.
 
@@ -42,65 +42,41 @@ No upstream `src/*` internal import is permitted. No duplicate adapter route is 
 atomically rejects duplicate adapter registration, leaving whichever adapter mounted
 first as the active route.
 
-Before enabling this plugin, the installer/configuration surface must remove the
-`openai-codex` profile from the `llm-pi-ai` section and preserve it only as a
-user-visible migration record; it must never copy a credential value into this
-plugin or silently repurpose another provider route. The plugin's eventual mount
-preflight must fail loudly and value-free when that route is already registered. It
-must not unregister another adapter or mutate the user's `llm-pi-ai` settings.
-
-A failed preflight leaves the existing adapter and all credential references intact.
+The plugin performs reject-only preflight: it never copies, imports, migrates,
+adopts, unregisters, or mutates another provider’s route or credential state. A
+failed preflight leaves the existing adapter and all credential references intact.
 Uninstalling this plugin likewise does not recreate a generic profile or write any
 credential; reconfiguration is an explicit operator choice.
 
-## OAuth authorization boundary
+## OAuth authorization and broker boundary
 
-Hermes is evidence of desired behavior, **not** authority to reuse its OAuth application identity, device-flow parameters, first-party client headers, account-header conventions, or backend URL selection.
+Hermes is evidence of desired behavior, **not** authorization for the DSH package
+to reuse Hermes’s OAuth application identity, device-flow parameters, first-party
+client headers, account-header conventions, or backend URL selection. The DSH
+package does none of those things.
 
-Before a live authorization implementation is enabled, OpenCnid must obtain and record:
+The supported handoff is a local first-party Hermes boundary:
 
-1. an OpenAI-authorized client identity for this distribution;
-2. the provider-approved OAuth grant/device-flow requirements and redirect behavior;
-3. the permitted request authentication and account-context mechanism; and
-4. the currently supported Codex/Responses endpoint and model entitlement policy.
+1. The operator completes `hermes auth add openai-codex` in Hermes.
+2. The operator starts `hermes proxy start --provider openai-codex` on the default
+   loopback binding, or explicitly configures an equivalent local Hermes proxy.
+3. The DSH plugin sends OpenAI Responses payloads to the loopback proxy. It sends
+   no Hermes OAuth credential and never opens Hermes’s credential storage.
+4. The Hermes `OpenAICodexAdapter` is the sole component that calls its own
+   Codex runtime resolver, performs refresh/rotation, and attaches the resulting
+   bearer upstream. On an upstream 401 it can force at most one Hermes-managed
+   refresh and retry when the credential changed.
 
-Until those facts are available, the implementation may exercise only injected/fake OAuth transports in tests. It must not present itself as a first-party Codex client or send copied first-party-looking identifiers.
+The broker forwards only `POST /v1/responses`; it rejects other paths and methods
+before resolving a credential. Its health endpoint exposes only safe metadata:
+`status`, a display name, and an `authenticated` boolean. The DSH status helper
+maps that to `{ configured, writable: false }` and discards all other values.
 
-## Session lifecycle contract
-
-### 1. Login is user-mediated and bounded
-
-The authorized implementation presents only the provider-approved verification location and user code, polls no faster than the returned interval (with a safe local minimum), supports cancellation, and has a finite timeout. Pending authorization remains pending; it is not an error state and it is never persisted as a usable session.
-
-A successful device result is exchanged by the provider-approved grant flow. The resulting access credentials, rotating refresh credentials, expiry information, and essential non-secret session metadata become one new session value only after validation succeeds.
-
-### 2. One opaque persisted value
-
-`OPENAI_CODEX_OAUTH` stores exactly one serialized, versioned state value. The stored value is always treated as `[REDACTED]` in logs, fixtures, documentation, diagnostics, UI, Git history, and error messages.
-
-The in-memory state contract contains a schema version, usable access credentials, rotating refresh credentials, an expiry instant or equivalent expiry facts, and minimal non-secret session metadata. It is never split across independent credential references. Invalid JSON, unknown schema versions, missing credentials, and invalid expiry facts are terminal re-login states with value-free errors.
-
-### 3. Restart recovery
-
-A new Harness process re-resolves `OPENAI_CODEX_OAUTH` for each model operation. A valid, unexpired value enables an authenticated request without repeating device login. UI/status code may state `configured`, `expired`, or `re-login required`; it never reads or renders the value.
-
-### 4. Refresh is proactive, serialized, and atomic
-
-Before a request, the session layer evaluates expiry with a bounded skew. If renewal is necessary, it acquires the cross-process lock, re-resolves the credential under the lock, and evaluates expiry again. A waiting caller must adopt a prior caller’s freshly stored session instead of replaying an already-consumed refresh credential.
-
-A successful refresh atomically replaces the complete session state. If the provider returns a new refresh credential, that credential replaces the old one in the same durable write as the new access credential and expiry facts.
-
-The session store implements this transaction using the Harness credential seam plus a file lock rooted at the resolved Harness home (`locks/openai-codex-oauth`). It creates the lock parent owner-only, uses Harness `withFileLock()` to serialize processes, and re-reads the canonical credential after acquiring the lock. A read-only credential source is never refreshed or overwritten.
-
-### 5. Failure classification
-
-| Condition | Required behavior |
-|---|---|
-| Login pending | Continue bounded polling; no persistence yet |
-| Login cancelled or expired | Stop cleanly; leave no usable session behind |
-| Refresh rate limit or quota response | Preserve the session, report a retry-later state, and honor a supported delay when available |
-| Invalid grant/token, refresh reuse, or token-endpoint 401/403 | Stop refreshing that chain, remove usable token material from the canonical session, retain only value-free diagnostics, and require re-login |
-| Request-level 401 | At most one reactive refresh/client-rebuild/retry; never loop indefinitely or switch accounts |
+No DSH credential reference, session state, access credential, refresh credential,
+device code, verification URL, client material, provider error body, or account
+metadata is persisted, rendered, logged, serialized, or returned by the default
+broker path. The earlier `OPENAI_CODEX_OAUTH` state codec remains a testable
+legacy programmatic seam; it is not used by the default Cordis runtime.
 
 ## Responses adapter contract
 
@@ -121,38 +97,42 @@ Provider-native event parsing is isolated from `LlmAdapter`; no provider wire ob
 
 ## Value-free status contract
 
-The configuration/model surface may expose only:
-
-- `unconfigured`
-- `authorizing`
-- `configured`
-- `refreshing`
-- `re-login required`
-- `error`
-
-It must never expose access credentials, refresh credentials, device codes, authorization URLs carrying sensitive parameters, account identifiers, or raw provider error bodies.
+The configuration/model surface may expose only safe broker state, currently
+`{ configured, writable: false }`, where `configured` means that the loopback
+Hermes broker reports an authenticated Codex session. If the broker is absent,
+unreachable, malformed, or unauthenticated, the helper returns `configured: false`.
+It must never expose access credentials, refresh credentials, device codes,
+authorization URLs carrying sensitive parameters, account identifiers, raw provider
+error bodies, or health payload fields other than the safe boolean.
 
 ## Deterministic acceptance tests
 
-The following acceptance cases are required before any live release:
+The following acceptance cases are required before release:
 
-1. A valid versioned state round-trips in memory; malformed/unknown versions fail without including `[REDACTED]` contents in the error.
-2. A fake authorized device transport completes login and stores one opaque session value.
-3. A fake expired session triggers exactly one refresh across concurrent callers.
-4. A rotated refresh result replaces the full persisted value; a fresh session object simulates restart and uses the replacement.
-5. A retryable refresh failure preserves the prior session; terminal refresh failure requires re-login without revealing values.
-6. A fake authenticated text response maps into legal Harness chunks.
-7. Streaming text, tool calls, cancellation, request-401 recovery, and replay rejection each have deterministic tests.
-8. A controlled live sequence, performed only with an authorized integration, proves login → persistence → text turn → forced-expiry test fixture → restart recovery → second text turn.
-
-The forced-expiry scenario is a test fixture, never a user-facing command or production refresh mode.
+1. Hermes registers `openai-codex`; its CLI help and provider list advertise it.
+2. Hermes has an authenticated-state check that reads no token value and a resolver
+   failure that returns only a generic re-authentication error.
+3. The broker forwards only `POST /v1/responses`, replaces the inbound marker with
+   the Hermes-resolved bearer, and rejects all other paths or methods before
+   credential resolution.
+4. An upstream 401 causes at most one forced Hermes refresh and retry, only when
+   the resolver returns a changed credential.
+5. The Cordis default runtime sends a deterministic Responses stream to the
+   loopback broker and performs zero DSH credential resolutions.
+6. The broker-health status function returns only `{ configured, writable: false }`
+   and does not surface arbitrary health payload data.
+7. Streaming text, tool calls, cancellation, request-401 recovery, and replay
+   rejection each have deterministic tests.
+8. A controlled live sequence, performed only after explicit authorization, proves
+   Hermes login → local broker → DSH text turn without logging, exporting, or
+   persisting Hermes OAuth material in DSH.
 
 ## Explicitly deferred
 
-- Live OAuth client identity, grant endpoints, scopes, redirect semantics, and provider authorization.
+- A direct DSH-owned OAuth client identity, grant endpoints, scopes, redirect semantics, and provider authorization.
 - First-party Codex/ChatGPT client fingerprinting and account-context headers.
-- Cordis mount/registration and its value-free configuration/status UI.
-- Live acceptance against an authorized Responses integration, including request-401 recovery and replay support.
+- Controlled live acceptance against an authenticated broker, including upstream request-401 recovery and replay support.
 - Publication to npm.
 
-These deferments do not relax the behavior contract; they prevent the project from inventing provider authorization or shipping an unsupported client identity.
+These deferments do not relax the broker boundary; they prevent the DSH package
+from inventing provider authorization or shipping an unsupported client identity.

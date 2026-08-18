@@ -34,7 +34,9 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "check": "pnpm run typecheck && pnpm run test"
+    "test:broker": "vitest run tests/cordis-plugin.spec.ts",
+    "check": "pnpm run typecheck && pnpm run test",
+    "check:broker": "pnpm run typecheck && pnpm run test:broker && pnpm run build"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

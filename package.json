@@ -1,0 +1,52 @@
+{
+  "name": "@opencnid/dsh-llm-openai-codex",
+  "version": "0.1.0",
+  "description": "Unofficial OAuth-backed Codex model provider for DeepSeek Harness.",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "type": "module",
+  "packageManager": "pnpm@9.14.4",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenCnid/deepseek-harness-codex.git"
+  },
+  "bugs": {
+    "url": "https://github.com/OpenCnid/deepseek-harness-codex/issues"
+  },
+  "homepage": "https://github.com/OpenCnid/deepseek-harness-codex#readme",
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "check": "pnpm run typecheck && pnpm run test"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-credentials": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.7"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-credentials": "^0.1.0-rc.7",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.7",
+    "@types/node": "^22.20.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.8"
+  }
+}

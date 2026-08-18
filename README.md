@@ -6,7 +6,9 @@
 
 ## Status
 
-Pre-alpha. The project is being built as a behavior-preserving port of the Codex login, token-refresh, and Responses-API lifecycle proven in Hermes Agent, adapted to DeepSeek Harness’s TypeScript/Cordis plugin seams.
+Pre-alpha. The project is a behavior-preserving TypeScript port of Codex session handling and Responses translation to DeepSeek Harness public seams.
+
+The deterministic adapter slice now validates persisted-session resolution, pre-credential bounded tool declarations, non-streaming text, SSE text streaming, function-call streaming, tool-result continuations, output-cap enforcement, bounded stream parsing and retained output, strict terminal status handling, and cancellation propagation. It is **not yet an installable Cordis plugin**: device login, authorized live OAuth transport, Cordis registration, value-free configuration UI, controlled live acceptance, and npm publication remain pending.
 
 It is not affiliated with, endorsed by, or supported by OpenAI or DeepSeek.
 

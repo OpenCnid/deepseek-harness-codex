@@ -108,10 +108,13 @@ The first authenticated vertical slice sends one stateless text turn assembled f
 
 Subsequent slices translate provider streaming into the Harness protocol:
 
+- validate and snapshot declared tools before credential resolution: at most 64, nonempty names ≤256 UTF-8 bytes, descriptions ≤8 KiB, and JSON-object parameter schemas ≤1 MiB; then forward only the sanitized copies;
+- enforce the same structural chunk lifecycle for configured stream callbacks: unique active indexes, matching block types, no more than 64 active blocks or 64 tool identities, and exact tool ID/name continuity from delta through block completion;
 - emit indexed `block-start`, text/reasoning/tool deltas, `block-end`, optional usage, and exactly one terminal `finish`;
-- emit no event after `finish`;
-- preserve raw tool argument JSON and correlate tool call IDs with later tool results;
-- honor `AbortSignal` for both request and stream cancellation; and
+- emit no event after `finish`; a `response.completed` event must carry `status: "completed"` before emitting natural completion, while a `response.incomplete` event maps to `max-tokens` only with `status: "incomplete"` and `incomplete_details.reason: "max_output_tokens"`;
+- preserve raw tool argument JSON; require each streamed tool-call ID to be unique, preserve its identical ID/name from start through completion, correlate it with exactly one later tool result, and reject streams exceeding 64 retained tool-call identities;
+- bound each network delivery to 4 MiB, each retained SSE frame to 1 MiB, and open output-block count plus per-block and aggregate retained output (including tool metadata and completed tool-call identities), failing value-free on any limit; decode UTF-8 strictly, accept CR, LF, or CRLF SSE line endings, and reject unterminated records at EOF;
+- honor `AbortSignal` for both request and stream cancellation, actively cancelling the response reader on caller abort and preventing remaining buffered records or output chunks from being emitted; and
 - keep opaque Responses replay material adapter-private and issuer-compatible. If opaque replay is rejected, disable it for that session and retry once with visible history and tool continuity intact.
 
 Provider-native event parsing is isolated from `LlmAdapter`; no provider wire object leaks into the Harness-facing API.
@@ -148,8 +151,8 @@ The forced-expiry scenario is a test fixture, never a user-facing command or pro
 
 - Live OAuth client identity, grant endpoints, scopes, redirect semantics, and provider authorization.
 - First-party Codex/ChatGPT client fingerprinting and account-context headers.
-- Live model catalog/status UI.
-- Streaming tool calls, replay, cancellation, and native compaction implementation.
+- Cordis mount/registration and its value-free configuration/status UI.
+- Live acceptance against an authorized Responses integration, including request-401 recovery and replay support.
 - Publication to npm.
 
 These deferments do not relax the behavior contract; they prevent the project from inventing provider authorization or shipping an unsupported client identity.

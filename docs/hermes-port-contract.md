@@ -90,6 +90,8 @@ Before a request, the session layer evaluates expiry with a bounded skew. If ren
 
 A successful refresh atomically replaces the complete session state. If the provider returns a new refresh credential, that credential replaces the old one in the same durable write as the new access credential and expiry facts.
 
+The session store implements this transaction using the Harness credential seam plus a file lock rooted at the resolved Harness home (`locks/openai-codex-oauth`). It creates the lock parent owner-only, uses Harness `withFileLock()` to serialize processes, and re-reads the canonical credential after acquiring the lock. A read-only credential source is never refreshed or overwritten.
+
 ### 5. Failure classification
 
 | Condition | Required behavior |

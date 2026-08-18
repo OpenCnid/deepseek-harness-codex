@@ -1,2 +1,5 @@
 export { assertOpenAiCodexRouteAvailable, OPENAI_CODEX_PROVIDER } from './route-ownership.js'
 export type { RegisteredProviderRoute } from './route-ownership.js'
+export { OAuthSessionStore, OAuthTerminalRefreshError, OPENAI_CODEX_OAUTH } from './auth/session-store.js'
+export type { OAuthCredentialProvider, OAuthSessionLock, OAuthSessionRefresh } from './auth/session-store.js'
+export { createOAuthSessionFileLock, oauthSessionLockFile } from './auth/session-lock.js'

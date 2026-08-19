@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { CodexTextAdapter } from '../src/adapter.ts'
 import { OPENAI_CODEX_OAUTH } from '../src/auth/session-store.ts'
 import { serializeOAuthState } from '../src/auth/state.ts'
-import defaultPlugin, { OPENAI_CODEX_PROVIDER, getOpenAiCodexStatus, openAiCodexPlugin } from '../src/index.ts'
+import defaultPlugin, { OPENAI_CODEX_PROVIDER, openAiCodexPlugin } from '../src/index.ts'
 
 class MemoryCredentials extends CredentialProvider {
   private readonly values = new Map<CredentialRef, string>()
@@ -63,25 +63,6 @@ describe('OpenAI Codex Cordis plugin', () => {
     expect(ctx.llm.listConfigurableProviders()).toEqual([])
   })
 
-  it('reports Hermes broker authentication with value-free status metadata', async () => {
-    const fetcher = vi.fn(async () => new Response(JSON.stringify({
-      status: 'ok',
-      upstream: 'openai-codex',
-      authenticated: true,
-    }), { headers: { 'content-type': 'application/json' } }))
-
-    await expect(getOpenAiCodexStatus(fetcher)).resolves.toEqual({ configured: true, writable: false })
-    expect(fetcher).toHaveBeenCalledWith('http://127.0.0.1:8645/health')
-  })
-
-  it('fails closed on malformed Hermes broker health metadata', async () => {
-    const fetcher = vi.fn(async () => new Response(JSON.stringify({
-      authenticated: 'true',
-      upstream: 'untrusted',
-    }), { headers: { 'content-type': 'application/json' } }))
-
-    await expect(getOpenAiCodexStatus(fetcher)).resolves.toEqual({ configured: false, writable: false })
-  })
 
   it('wires a configured runtime through the registered Cordis route', async () => {
     const ctx = createContext()
@@ -109,14 +90,9 @@ describe('OpenAI Codex Cordis plugin', () => {
     ])
   })
 
-  it('uses the local Hermes Codex broker by default without resolving a plugin OAuth credential', async () => {
+  it('requires a plugin-owned OAuth session by default without calling a broker', async () => {
     const ctx = createContext()
-    const fetcher = vi.fn(async () => new Response([
-      'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}\n\n',
-      'data: {"type":"response.output_text.delta","output_index":0,"delta":"through broker"}\n\n',
-      'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"message"}}\n\n',
-      'data: {"type":"response.completed","response":{"status":"completed"}}\n\n',
-    ].join(''), { headers: { 'content-type': 'text/event-stream' } }))
+    const fetcher = vi.fn()
     vi.stubGlobal('fetch', fetcher)
     try {
       await ctx.plugin(openAiCodexPlugin, {
@@ -128,17 +104,15 @@ describe('OpenAI Codex Cordis plugin', () => {
         model: 'codex-test',
         maxTokens: 10,
         messages: [createUserMessage({ content: [{ type: 'text', text: 'hello' }], source: { kind: 'plugin', plugin: 'test' } })],
-      }))).resolves.toEqual([
-        { type: 'block-start', index: 0, blockType: 'text' },
-        { type: 'text-delta', index: 0, text: 'through broker' },
-        { type: 'block-end', index: 0, block: { type: 'text', text: 'through broker' } },
-        { type: 'finish', reason: { kind: 'stop' } },
-      ])
-      expect(fetcher).toHaveBeenCalledWith(
-        'http://127.0.0.1:8645/v1/responses',
-        expect.objectContaining({ headers: expect.objectContaining({ authorization: 'Bearer hermes-local-broker' }) }),
-      )
-      expect((ctx.credentials as unknown as MemoryCredentials).resolveCalls).toBe(0)
+      }))).resolves.toEqual([{
+        type: 'finish',
+        reason: {
+          kind: 'error',
+          failure: { code: 'AUTH_REQUIRED', message: 'OpenAI Codex authentication required' },
+        },
+      }])
+      expect(fetcher).not.toHaveBeenCalled()
+      expect((ctx.credentials as unknown as MemoryCredentials).resolveCalls).toBe(1)
     } finally {
       vi.unstubAllGlobals()
     }
@@ -173,6 +147,5 @@ describe('OpenAI Codex Cordis plugin', () => {
       settingsPath: [],
       declared: false,
     }])
-    await expect(getOpenAiCodexStatus()).resolves.toEqual({ configured: false, writable: false })
   })
 })

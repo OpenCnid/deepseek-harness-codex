@@ -1,4 +1,5 @@
 import { attributionHeaders, LlmError } from '@deepseek-ai/dsh-llm'
+import { discardResponseBody, readBoundedJson } from './bounded-json.js'
 import type { CodexTextRequest, CodexTextResponse } from './adapter.js'
 
 export interface ResponsesTextTransportOptions {
@@ -115,13 +116,14 @@ export function createResponsesTextTransport(options: ResponsesTextTransportOpti
       throw new LlmError('OpenAI Codex Responses request failed', 'TRANSPORT')
     }
     if (!response.ok) {
+      await discardResponseBody(response)
       throw new LlmError(`OpenAI Codex Responses request failed (HTTP ${response.status})`, `HTTP_${response.status}`, {
         status: response.status,
       })
     }
     let parsed: unknown
     try {
-      parsed = await response.json()
+      parsed = await readBoundedJson(response)
     } catch (_error) {
       throw new LlmError('OpenAI Codex Responses returned invalid JSON', 'INVALID_RESPONSE')
     }

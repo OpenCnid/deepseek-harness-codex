@@ -111,4 +111,43 @@ describe('Codex Responses text transport', () => {
       accessToken: '[REDACTED_ACCESS_TOKEN]',
     } as never)).rejects.toMatchObject({ code: 'INVALID_REQUEST' })
   })
+
+  it('cancels a non-success response body before mapping its public error', async () => {
+    let cancelled = false
+    const transport = createResponsesTextTransport({
+      url: 'https://responses.example.test/v1/responses',
+      fetch: async () => ({
+        ok: false,
+        status: 502,
+        body: new ReadableStream<Uint8Array>({
+          cancel() { cancelled = true },
+        }),
+      } as unknown as Response),
+    })
+
+    await expect(transport({
+      model: 'gpt-5-codex',
+      input: [],
+      accessToken: '[REDACTED_ACCESS_TOKEN]',
+      maxOutputTokens: 7,
+    })).rejects.toMatchObject({ code: 'HTTP_502' })
+    expect(cancelled).toBe(true)
+  })
+
+  it('rejects an oversized successful response before JSON parsing', async () => {
+    const transport = createResponsesTextTransport({
+      url: 'https://responses.example.test/v1/responses',
+      fetch: async () => new Response('{"status":"completed","output_text":"ignored"}', {
+        status: 200,
+        headers: { 'content-length': String(1024 * 1024 + 1) },
+      }),
+    })
+
+    await expect(transport({
+      model: 'gpt-5-codex',
+      input: [],
+      accessToken: '[REDACTED_ACCESS_TOKEN]',
+      maxOutputTokens: 7,
+    })).rejects.toMatchObject({ code: 'INVALID_RESPONSE' })
+  })
 })

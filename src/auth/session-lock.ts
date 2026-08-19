@@ -1,11 +1,14 @@
 import { mkdir } from 'node:fs/promises'
+import { hashOpenAiCodexAccountScope } from './account-scope.js'
 import { dirname, join } from 'node:path'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { OAuthSessionLock } from './session-store.js'
 
-export function oauthSessionLockFile(home: string = resolveDshHome()): string {
-  return join(home, 'locks', 'openai-codex-oauth')
+export function oauthSessionLockFile(home: string = resolveDshHome(), accountScope?: string): string {
+  if (accountScope === undefined) return join(home, 'locks', 'openai-codex-oauth')
+  const suffix = hashOpenAiCodexAccountScope(accountScope)
+  return join(home, 'locks', `openai-codex-oauth-${suffix}`)
 }
 
 export function createOAuthSessionFileLock(filename: string = oauthSessionLockFile()): OAuthSessionLock {

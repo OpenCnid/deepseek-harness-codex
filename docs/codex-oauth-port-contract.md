@@ -26,4 +26,6 @@ The persisted session is opaque outside the auth module. Tokens, device codes, c
 
 ## Current implementation stage
 
-The package now has no external agent or broker runtime dependency. A request without a plugin-owned session returns an authentication-required result before network I/O. The dedicated login and direct authorized transport slices remain under development and must be covered with deterministic fake transports before controlled, opt-in live acceptance.
+The package provides an authorized, injected OAuth runtime factory: PKCE browser redirects, device-code polling, AES-256-GCM encrypted canonical-UTF-8 account-scoped persistence, credential-free status/disconnect ownership, refresh under a cross-process file lock, bounded OAuth/non-streaming JSON parsing, and direct Responses text/SSE transports. It contains no provider-specific distribution client, endpoint, grant, or entitlement.
+
+Live acceptance remains opt-in. It requires an approved provider distribution contract, an eligible user account with consent, and a secure stable local key source; deterministic tests use injected fake transports only. See [Authorized runtime](authorized-oauth-runtime.md).

@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { OAuthSessionStore, OAuthTerminalRefreshError } from '../src/index.ts'
+import { OAuthSessionStore, OAuthTerminalRefreshError, createAes256GcmSessionCipher, createScopedOpenAiCodexOAuthRef } from '../src/index.ts'
 import { serializeOAuthState } from '../src/auth/state.ts'
+
+const cipher = createAes256GcmSessionCipher(new Uint8Array(32).fill(7))
+const credential = createScopedOpenAiCodexOAuthRef('[REDACTED_TEST_SCOPE]')
+const binding = String(credential)
+
+function createStore(
+  credentials: ConstructorParameters<typeof OAuthSessionStore>[0],
+  withLock: ConstructorParameters<typeof OAuthSessionStore>[1],
+): OAuthSessionStore {
+  return new OAuthSessionStore(credentials, withLock, cipher, credential)
+}
 
 describe('Codex OAuth session store', () => {
   it('returns a current session without locking or refreshing', async () => {
@@ -11,14 +22,14 @@ describe('Codex OAuth session store', () => {
       expiresAt: '2030-01-01T00:00:00.000Z',
     })
     const credentials = {
-      resolve: async () => ({ value: persisted, source: 'memory' as const }),
+      resolve: async () => ({ value: cipher.seal(persisted ?? '', binding), source: 'memory' as const }),
       describe: async () => ({ configured: true, source: 'memory' as const, writable: true }),
-      set: async (_ref: unknown, value: string) => { persisted = value },
+      set: async (_ref: unknown, value: string) => { persisted = cipher.open(value, binding) },
       unset: async () => { persisted = undefined },
     }
     let lockCalls = 0
     let refreshCalls = 0
-    const store = new OAuthSessionStore(credentials, async operation => {
+    const store = createStore(credentials, async operation => {
       lockCalls += 1
       return operation()
     })
@@ -43,12 +54,12 @@ describe('Codex OAuth session store', () => {
     let lockCalls = 0
     let refreshCalls = 0
     const credentials = {
-      resolve: async () => persisted === undefined ? undefined : { value: persisted, source: 'memory' as const },
+      resolve: async () => persisted === undefined ? undefined : { value: cipher.seal(persisted ?? '', binding), source: 'memory' as const },
       describe: async () => ({ configured: true, source: 'memory' as const, writable: true }),
-      set: async (_ref: unknown, value: string) => { persisted = value },
+      set: async (_ref: unknown, value: string) => { persisted = cipher.open(value, binding) },
       unset: async () => { persisted = undefined },
     }
-    const store = new OAuthSessionStore(credentials, async operation => {
+    const store = createStore(credentials, async operation => {
       lockCalls += 1
       return operation()
     })
@@ -79,12 +90,12 @@ describe('Codex OAuth session store', () => {
     let refreshCalls = 0
     let queued = Promise.resolve()
     const credentials = {
-      resolve: async () => persisted === undefined ? undefined : { value: persisted, source: 'memory' as const },
+      resolve: async () => persisted === undefined ? undefined : { value: cipher.seal(persisted ?? '', binding), source: 'memory' as const },
       describe: async () => ({ configured: true, source: 'memory' as const, writable: true }),
-      set: async (_ref: unknown, value: string) => { persisted = value },
+      set: async (_ref: unknown, value: string) => { persisted = cipher.open(value, binding) },
       unset: async () => { persisted = undefined },
     }
-    const store = new OAuthSessionStore(credentials, async operation => {
+    const store = createStore(credentials, async operation => {
       const task = queued.then(operation, operation)
       queued = task.then(() => undefined, () => undefined)
       return task
@@ -117,12 +128,12 @@ describe('Codex OAuth session store', () => {
       expiresAt: '2028-01-01T00:00:00.000Z',
     })
     const credentials = {
-      resolve: async () => persisted === undefined ? undefined : { value: persisted, source: 'memory' as const },
+      resolve: async () => persisted === undefined ? undefined : { value: cipher.seal(persisted ?? '', binding), source: 'memory' as const },
       describe: async () => ({ configured: true, source: 'memory' as const, writable: true }),
-      set: async (_ref: unknown, value: string) => { persisted = value },
+      set: async (_ref: unknown, value: string) => { persisted = cipher.open(value, binding) },
       unset: async () => { persisted = undefined },
     }
-    const store = new OAuthSessionStore(credentials, async operation => operation())
+    const store = createStore(credentials, async operation => operation())
 
     await expect(store.resolveSession(new Date('2029-01-01T00:00:00.000Z'), async () => {
       throw new OAuthTerminalRefreshError()
@@ -139,12 +150,12 @@ describe('Codex OAuth session store', () => {
     })
     let refreshCalls = 0
     const credentials = {
-      resolve: async () => ({ value: persisted, source: 'env' as const }),
+      resolve: async () => ({ value: cipher.seal(persisted ?? '', binding), source: 'env' as const }),
       describe: async () => ({ configured: true, source: 'env' as const, writable: false }),
       set: async () => { throw new Error('set must not be called') },
       unset: async () => { throw new Error('unset must not be called') },
     }
-    const store = new OAuthSessionStore(credentials, async operation => operation())
+    const store = createStore(credentials, async operation => operation())
 
     await expect(store.resolveSession(new Date('2029-01-01T00:00:00.000Z'), async state => {
       refreshCalls += 1

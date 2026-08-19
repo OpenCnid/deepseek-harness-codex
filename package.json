@@ -31,12 +31,12 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "clean": "node scripts/clean-dist.mjs",
+    "build": "pnpm run clean && tsc -p tsconfig.json",
+    "prepack": "pnpm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:broker": "vitest run tests/cordis-plugin.spec.ts",
-    "check": "pnpm run typecheck && pnpm run test",
-    "check:broker": "pnpm run typecheck && pnpm run test:broker && pnpm run build"
+    "check": "pnpm run typecheck && pnpm run test"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

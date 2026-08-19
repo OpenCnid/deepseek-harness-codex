@@ -3,12 +3,6 @@ import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { CodexTextAdapter, type CodexModel, type CodexTextRequest, type CodexTextResponse } from './adapter.js'
 import { createOAuthSessionFileLock } from './auth/session-lock.js'
 import { OAuthSessionStore, type OAuthSessionRefresh } from './auth/session-store.js'
-import type { OAuthState } from './auth/state.js'
-import {
-  createHermesCodexBrokerRuntime,
-  getHermesCodexBrokerStatus,
-  type HermesCodexBrokerStatus,
-} from './hermes-codex-broker.js'
 import { assertOpenAiCodexRouteAvailable, OPENAI_CODEX_PROVIDER } from './route-ownership.js'
 
 export const OPENAI_CODEX_SETTINGS_NAMESPACE = 'openai-codex'
@@ -25,23 +19,14 @@ export interface CodexPluginRuntime {
 
 /**
  * Programmatic runtime callbacks are intentionally separate from stored settings.
- * A configuration UI receives only the provider-directory entry and OAuth status;
- * it never receives, renders, or persists an OAuth value.
+ * A configuration UI receives only the provider-directory entry; it never receives,
+ * renders, or persists an OAuth value.
  */
 export interface OpenAiCodexPluginConfig {
   models: readonly CodexModel[]
   runtime?: CodexPluginRuntime
 }
 
-export type OpenAiCodexStatus = HermesCodexBrokerStatus
-
-/**
- * Read only the local Hermes broker's safe health metadata. This never resolves,
- * parses, logs, or returns an OAuth value from either DSH or Hermes storage.
- */
-export function getOpenAiCodexStatus(fetcher?: typeof fetch): Promise<OpenAiCodexStatus> {
-  return getHermesCodexBrokerStatus(fetcher)
-}
 function invalidConfig(): never {
   throw new Error('OpenAI Codex plugin configuration is invalid')
 }
@@ -80,8 +65,7 @@ function normalizeModels(value: unknown): readonly CodexModel[] {
 }
 
 interface NormalizedCodexPluginRuntime {
-  refreshSession?: OAuthSessionRefresh
-  resolveSession?: () => Promise<OAuthState>
+  refreshSession: OAuthSessionRefresh
   createResponse: (input: CodexTextRequest) => Promise<CodexTextResponse>
   streamResponse?: (input: CodexTextRequest) => AsyncIterable<StreamChunk>
 }
@@ -89,7 +73,10 @@ interface NormalizedCodexPluginRuntime {
 function normalizeRuntime(value: unknown): NormalizedCodexPluginRuntime {
   try {
     if (value === undefined) {
-      return createHermesCodexBrokerRuntime()
+      return {
+        refreshSession: async () => { throw new Error('OpenAI Codex OAuth refresh is unavailable') },
+        createResponse: async () => { throw new Error('OpenAI Codex authorized transport is unavailable') },
+      }
     }
     if (value === null || typeof value !== 'object') return invalidConfig()
     const runtime = value as Record<string, unknown>
@@ -131,10 +118,10 @@ export const openAiCodexPlugin = {
     assertOpenAiCodexRouteAvailable(registeredRoutes)
 
     const sessions = new OAuthSessionStore(ctx.credentials, createOAuthSessionFileLock())
-    const resolveSession = normalized.runtime.resolveSession ?? (() => sessions.resolveSession(
+    const resolveSession = () => sessions.resolveSession(
       new Date(),
-      normalized.runtime.refreshSession ?? (async () => { throw new Error('OpenAI Codex OAuth refresh is unavailable') }),
-    ))
+      normalized.runtime.refreshSession,
+    )
     const adapter = new CodexTextAdapter({
       models: normalized.models,
       resolveSession,

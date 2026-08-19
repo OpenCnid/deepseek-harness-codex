@@ -15,6 +15,19 @@ describe('Codex OAuth session lock', () => {
     expect(oauthSessionLockFile('/home/[REDACTED]/.dsh')).toBe('/home/[REDACTED]/.dsh/locks/openai-codex-oauth')
   })
 
+  it('derives distinct private lock locations for distinct account scopes', () => {
+    const first = oauthSessionLockFile('/home/[REDACTED]/.dsh', '[REDACTED_ACCOUNT_SCOPE_A]')
+    const second = oauthSessionLockFile('/home/[REDACTED]/.dsh', '[REDACTED_ACCOUNT_SCOPE_B]')
+    expect(first).not.toBe(second)
+    expect(first).toMatch(/^\/home\/\[REDACTED\]\/\.dsh\/locks\/openai-codex-oauth-[a-f0-9]{64}$/)
+  })
+
+  it('rejects non-canonical UTF-8 account scopes before deriving a lock location', () => {
+    const loneSurrogate = '\uD800'
+    expect(() => oauthSessionLockFile('/home/[REDACTED]/.dsh', loneSurrogate)).toThrow('OpenAI Codex OAuth account scope is invalid')
+    expect(() => oauthSessionLockFile('/home/[REDACTED]/.dsh', '\uFFFD')).not.toThrow()
+  })
+
   it('serializes callers and releases the sibling lock file', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'dsh-codex-lock-'))
     temporaryDirectories.push(directory)
